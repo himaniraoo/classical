@@ -26,28 +26,49 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Process each video
 for viniyoga in VINIYOGA_CLASSES:
-    os.makedirs(os.path.join(SAVE_DIR, viniyoga), exist_ok=True)
+    print(f"🔹 Processing: {viniyoga}")
+    class_dir = os.path.join(SAVE_DIR, viniyoga)
+    os.makedirs(class_dir, exist_ok=True)
+
     video_path = os.path.join(VIDEO_DIR, f"{viniyoga}.mp4")
+
+    # Check if video exists
+    if not os.path.exists(video_path):
+        print(f"❌ Video not found: {video_path}")
+        continue  # Skip to the next class
+
     cap = cv2.VideoCapture(video_path)
-    
+
+    # Check if video opens correctly
+    if not cap.isOpened():
+        print(f"❌ Error opening video: {video_path}")
+        continue
+
+    frame_count = 0
     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-        frame_count = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
+                print(f"✅ Completed {viniyoga} after {frame_count} frames")
                 break
             
+            # Convert frame to RGB
             image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = holistic.process(image)
             keypoints = extract_keypoints(results)
-            
+
+            # Handle missing keypoints
+            if keypoints.shape[0] == 0:
+                print(f"⚠️ No keypoints detected in {viniyoga} frame {frame_count}")
+                continue
+
             # Save keypoints
-            np.save(os.path.join(SAVE_DIR, viniyoga, f"keypoints_{frame_count}.npy"), keypoints)
+            np.save(os.path.join(class_dir, f"keypoints_{frame_count}.npy"), keypoints)
             frame_count += 1
-    
+
     cap.release()
 
-print("Keypoints extracted and saved successfully!")
+print("✅ Keypoints extracted and saved successfully!")
 
 # Load dataset
 sequences, labels = [], []
@@ -62,9 +83,9 @@ for viniyoga in VINIYOGA_CLASSES:
 X = np.array(sequences)
 y = tf.keras.utils.to_categorical(labels, num_classes=len(VINIYOGA_CLASSES))
 
-# Reshape X to have 3 dimensions
-X = X.reshape((X.shape[0], X.shape[1], 1))  # Add a third dimension for features
-print(f"Reshaped X: {X.shape}")  # Debug the new shape
+# Reshape X to have 3 dimensions (LSTM input format)
+X = X.reshape((X.shape[0], X.shape[1], 1))
+print(f"📊 Reshaped X: {X.shape}")
 
 # Define LSTM model
 model = Sequential([
@@ -82,4 +103,4 @@ model.fit(X, y, epochs=100, batch_size=32)
 
 # Save model
 model.save("viniyoga_model.h5")
-print("Model trained and saved successfully!")
+print("✅ Model trained and saved successfully!")
